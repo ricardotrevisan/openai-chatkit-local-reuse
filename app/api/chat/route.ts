@@ -38,18 +38,36 @@ export async function POST(request: NextRequest): Promise<Response> {
       body: JSON.stringify({
         model,
         messages: [SYSTEM_MESSAGE, ...messages],
-        stream: false,
+        stream: true,
       }),
     });
 
-    const text = await upstreamResponse.text();
+    if (!upstreamResponse.ok || !upstreamResponse.body) {
+      const text = await upstreamResponse.text().catch(() => "");
+      return new Response(
+        text ||
+          JSON.stringify({
+            error: "Upstream chat backend error",
+          }),
+        {
+          status: upstreamResponse.status,
+          headers: {
+            "Content-Type":
+              upstreamResponse.headers.get("content-type") ??
+              "application/json; charset=utf-8",
+          },
+        }
+      );
+    }
 
-    return new Response(text || "{}", {
+    return new Response(upstreamResponse.body, {
       status: upstreamResponse.status,
       headers: {
         "Content-Type":
           upstreamResponse.headers.get("content-type") ??
-          "application/json; charset=utf-8",
+          "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
