@@ -32,3 +32,10 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* Hide Next.js dev/feedback widget button */
+button[aria-label*="Next.js"],
+button[aria-label*="Next DevTools"],
+button[aria-label*="Next toolbar"] {
+  display: none !important;
+}

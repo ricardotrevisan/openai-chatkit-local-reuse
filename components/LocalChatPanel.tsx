@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 type ChatMessage = {
@@ -14,12 +14,80 @@ type StreamChunk = {
   choices?: { delta?: { content?: string } }[];
 };
 
+type ChatTranscript = {
+  id: string;
+  createdAt: string;
+  messages: ChatMessage[];
+};
+
 export function LocalChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [history, setHistory] = useState<ChatTranscript[]>([]);
+  const [isFlashing, setIsFlashing] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem("local-chat:state");
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        messages?: ChatMessage[];
+        input?: string;
+        history?: ChatTranscript[];
+      } | null;
+      if (parsed?.messages && Array.isArray(parsed.messages)) {
+        setMessages(parsed.messages);
+      }
+      if (typeof parsed?.input === "string") {
+        setInput(parsed.input);
+      }
+      if (parsed?.history && Array.isArray(parsed.history)) {
+        setHistory(parsed.history);
+      }
+    } catch {
+      // ignore invalid stored state
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const payload = JSON.stringify({ messages, input, history });
+      window.localStorage.setItem("local-chat:state", payload);
+    } catch {
+      // ignore persistence errors
+    }
+  }, [messages, input, history]);
+
+  const handleNewChat = () => {
+    if (messages.length > 0) {
+      const createdAt = new Date().toISOString();
+      const transcript: ChatTranscript = {
+        id: createdAt,
+        createdAt,
+        messages,
+      };
+      setHistory((current) => [transcript, ...current].slice(0, 20));
+    }
+    setMessages([]);
+    setInput("");
+    setPendingImage(null);
+    setError(null);
+    setIsFlashing(true);
+    window.setTimeout(() => {
+      setIsFlashing(false);
+    }, 180);
+  };
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -161,7 +229,13 @@ export function LocalChatPanel() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-end bg-slate-100 dark:bg-slate-950">
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6">
+      <div
+        className={`mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-6 pb-24 transition-colors ${
+          isFlashing
+            ? "bg-sky-50/70 dark:bg-slate-800/70"
+            : "bg-transparent"
+        }`}
+      >
         <div className="mb-4 text-center text-lg font-semibold text-slate-900 dark:text-slate-100">
           Travis local
         </div>
@@ -213,6 +287,56 @@ export function LocalChatPanel() {
           ))}
         </div>
 
+        {history.length > 0 && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-2 font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Histórico de chats
+            </div>
+            <div className="max-h-40 space-y-2 overflow-y-auto">
+              {history.map((session) => {
+                const date = new Date(session.createdAt);
+                const preview =
+                  session.messages.find((m) => m.role === "user")
+                    ?.content ?? "Conversa anterior";
+                return (
+                  <div
+                    key={session.id}
+                    onClick={() => {
+                      setMessages(session.messages);
+                      setInput("");
+                      setPendingImage(null);
+                      setError(null);
+                    }}
+                    className="flex w-full items-start justify-between gap-2 rounded-md border border-slate-200 px-2 py-1 text-left hover:border-sky-400 hover:bg-sky-50 dark:border-slate-700 dark:hover:border-sky-500 dark:hover:bg-slate-800"
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {date.toLocaleString()}
+                      </span>
+                      <span className="line-clamp-1 text-[11px] text-slate-700 dark:text-slate-100">
+                        {preview}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Excluir chat"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setHistory((current) =>
+                          current.filter((item) => item.id !== session.id)
+                        );
+                      }}
+                      className="ml-1 rounded-md border border-transparent px-1 py-0.5 text-[11px] text-slate-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-700 dark:hover:bg-red-950 dark:hover:text-red-400"
+                    >
+                      apagar
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
             {error}
@@ -227,6 +351,7 @@ export function LocalChatPanel() {
                   Anexar imagem
                 </span>
                 <input
+                  suppressHydrationWarning
                   type="file"
                   accept="image/*"
                   className="hidden"
@@ -255,7 +380,19 @@ export function LocalChatPanel() {
           </div>
 
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleNewChat}
+              disabled={
+                isSending || (messages.length === 0 && !input && !pendingImage)
+              }
+              aria-label="Novo chat"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-xl font-bold text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500"
+            >
+              +
+            </button>
             <input
+              suppressHydrationWarning
               type="text"
               value={input}
               onChange={(event) => setInput(event.target.value)}
