@@ -70,6 +70,19 @@ Regras obrigatórias (siga SEMPRE):
 `,
   };
 
+const SECOND_SYSTEM_MESSAGE: UpstreamMessage = {
+  role: "system",
+  content: `Você já recebeu os resultados de uma ferramenta de busca (web_search).
+
+Use SOMENTE essas informações, mais o seu conhecimento próprio, para responder ao usuário.
+
+Regras obrigatórias:
+1. NÃO chame nem sugira novas ferramentas.
+2. NÃO retorne tool_call, JSON ou código. Responda em linguagem natural.
+3. Seja breve, direto e factual.
+4. Resuma os principais dados e, quando possível, inclua as URLs usadas.`,
+};
+
 async function callLocalChat(payload: unknown) {
   const res = await fetch(LOCAL_CHAT_URL, {
     method: "POST",
@@ -103,16 +116,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     // 1) First model call: allow it to decide whether to call tools
     const baseMessages: UpstreamMessage[] = [SYSTEM_MESSAGE, ...messages];
 
-    const firstResponse = await callLocalChat({
+    const firstPayload = {
       model,
       messages: baseMessages,
       tools: [WEB_SEARCH_TOOL],
       tool_choice: "auto",
       stream: false,
-    });
+    };
+    console.log("[/api/chat] First upstream payload:", JSON.stringify(firstPayload, null, 2));
+
+    const firstResponse = await callLocalChat(firstPayload);
+    console.log("[/api/chat] First upstream raw response:", JSON.stringify(firstResponse, null, 2));
 
     const firstChoice = firstResponse?.choices?.[0];
     const firstMessage = firstChoice?.message ?? {};
+    console.log("[/api/chat] First upstream message:", JSON.stringify(firstMessage, null, 2));
     const rawToolCalls = (firstMessage as any).tool_calls;
     const toolCalls: ToolCall[] = Array.isArray(rawToolCalls)
       ? rawToolCalls
@@ -125,7 +143,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       finalContent = String(firstMessage.content ?? "");
     } else {
       // 2) Execute tool calls (currently only web_search)
-      console.log('Tool Calling');
+      console.log("[/api/chat] Tool Calling, toolCalls:", JSON.stringify(toolCalls, null, 2));
       const toolMessages: any[] = [];
 
       for (const toolCall of toolCalls) {
@@ -157,12 +175,20 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
       }
 
-      // 3) Second model call: give it the tool results so it can answer
-      const secondResponse = await callLocalChat({
+      // 3) Second model call: give it the tool results so it can answer.
+      // For the second pass, we use a different system prompt that says:
+      // "you already have tool results, just answer plainly".
+      // We also do NOT include the intermediate assistant tool_call message;
+      // only the original conversation plus the tool results.
+      const secondPayload = {
         model,
-        messages: baseMessages.concat([firstMessage, ...toolMessages]),
+        messages: [SECOND_SYSTEM_MESSAGE, ...messages, ...toolMessages],
         tool_choice: "none",
-      });
+      };
+      console.log("[/api/chat] Second upstream payload:", JSON.stringify(secondPayload, null, 2));
+
+      const secondResponse = await callLocalChat(secondPayload);
+      console.log("[/api/chat] Second upstream raw response:", JSON.stringify(secondResponse, null, 2));
 
       const secondChoice = secondResponse?.choices?.[0];
       const secondMessage = secondChoice?.message ?? {};
