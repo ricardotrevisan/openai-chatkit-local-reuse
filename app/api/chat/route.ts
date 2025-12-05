@@ -67,6 +67,7 @@ Regras obrigatórias (siga SEMPRE):
 5. Se o usuário apenas pedir opinião, análise ou algo interno ao modelo, responda diretamente.
 6. Mantenha respostas 100% curtas, diretas e sem divagações.
 7. Se utilizou a ferramenta, disponibilize as URLs quando disponíveis.
+8. Quando mostrar código, use sempre blocos Markdown com crase tripla (\`\`\`) indicando a linguagem (por exemplo, \`\`\`ts\`\`\`, \`\`\`js\`\`\`, \`\`\`bash\`\`\`) e mantenha os trechos o mais curtos possível.
 `,
   };
 
@@ -80,7 +81,8 @@ Regras obrigatórias:
 1. NÃO chame nem sugira novas ferramentas.
 2. NÃO retorne tool_call, JSON ou código. Responda em linguagem natural.
 3. Seja breve, direto e factual.
-4. Resuma os principais dados e, quando possível, inclua as URLs usadas.`,
+4. Resuma os principais dados e, quando possível, inclua as URLs usadas.
+5. Se precisar mencionar comandos ou pequenos trechos de código, use blocos Markdown com crase tripla (\`\`\`) e indique a linguagem (por exemplo, \`\`\`ts\`\`\`, \`\`\`js\`\`\`, \`\`\`bash\`\`\`).`,
 };
 
 async function callLocalChat(payload: unknown) {

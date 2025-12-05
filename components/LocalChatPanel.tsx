@@ -20,6 +20,112 @@ type ChatTranscript = {
   messages: ChatMessage[];
 };
 
+function highlightCode(codeText: string, language: string) {
+  const lang = language.toLowerCase();
+  const isPython = lang.startsWith("py");
+  const isJsLike =
+    lang.startsWith("ts") ||
+    lang.startsWith("js") ||
+    lang === "javascript" ||
+    lang === "typescript";
+
+  const pythonKeywords = [
+    "def",
+    "return",
+    "if",
+    "elif",
+    "else",
+    "for",
+    "while",
+    "in",
+    "import",
+    "from",
+    "as",
+    "class",
+    "pass",
+    "break",
+    "continue",
+    "try",
+    "except",
+    "finally",
+    "with",
+    "lambda",
+    "True",
+    "False",
+    "None",
+  ];
+
+  const jsKeywords = [
+    "function",
+    "return",
+    "if",
+    "else",
+    "for",
+    "while",
+    "in",
+    "of",
+    "import",
+    "from",
+    "as",
+    "class",
+    "extends",
+    "new",
+    "const",
+    "let",
+    "var",
+    "async",
+    "await",
+    "true",
+    "false",
+    "null",
+    "undefined",
+  ];
+
+  const keywordSet = new Set(
+    isPython ? pythonKeywords : isJsLike ? jsKeywords : []
+  );
+
+  const result: JSX.Element[] = [];
+  const tokenRegex =
+    /(".*?"|'.*?'|`.*?`|\b\d+(?:\.\d+)?\b|\b[a-zA-Z_]\w*\b)/g;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = tokenRegex.exec(codeText)) !== null) {
+    if (match.index > lastIndex) {
+      const plain = codeText.slice(lastIndex, match.index);
+      result.push(<span key={key++}>{plain}</span>);
+    }
+
+    const token = match[0];
+    let className = "";
+    if (/^["'`]/.test(token)) {
+      className = "text-emerald-300";
+    } else if (/^\d/.test(token)) {
+      className = "text-amber-300";
+    } else if (keywordSet.has(token)) {
+      className = "text-sky-300";
+    }
+
+    result.push(
+      <span key={key++} className={className}>
+        {token}
+      </span>
+    );
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < codeText.length) {
+    const tail = codeText.slice(lastIndex);
+    result.push(<span key={key++}>{tail}</span>);
+  }
+
+  return result;
+}
+
 export function LocalChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -277,7 +383,59 @@ export function LocalChatPanel() {
                         : "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
                     }`}
                   >
-                    <ReactMarkdown className="whitespace-pre-wrap break-words">
+                    <ReactMarkdown
+                      className="whitespace-pre-wrap break-words"
+                      components={{
+                        code({ inline, className, children, ...props }) {
+                          const match = /language-(\w+)/.exec(className || "");
+                          const language = match?.[1] ?? "";
+
+                          if (!inline) {
+                            const codeText = String(children ?? "");
+
+                            const handleCopy = () => {
+                              if (typeof navigator !== "undefined") {
+                                navigator.clipboard
+                                  .writeText(codeText)
+                                  .catch(() => undefined);
+                              }
+                            };
+
+                            return (
+                              <div className="mt-2 rounded-xl border border-slate-300 bg-slate-950 text-xs text-slate-100 dark:border-slate-700">
+                                <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-300">
+                                  <span>{language || "code"}</span>
+                                  <button
+                                    type="button"
+                                    onClick={handleCopy}
+                                    className="rounded border border-slate-700 px-1.5 py-0.5 text-[9px] font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-800"
+                                  >
+                                    copiar
+                                  </button>
+                                </div>
+                                <pre className="max-h-96 overflow-auto px-3 py-2 text-[11px] leading-relaxed">
+                                  <code
+                                    className={className}
+                                    {...props}
+                                  >
+                                    {highlightCode(codeText, language)}
+                                  </code>
+                                </pre>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <code
+                              className="rounded bg-slate-900/80 px-1.5 py-0.5 text-[11px] text-slate-100"
+                              {...props}
+                            >
+                              {children}
+                            </code>
+                          );
+                        },
+                      }}
+                    >
                       {message.content}
                     </ReactMarkdown>
                   </div>
